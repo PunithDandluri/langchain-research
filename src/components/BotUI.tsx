@@ -1,62 +1,64 @@
 "use client";
+
 import ClaraAI from "../Ai/azureOpenAI";
 import React, { useState, useRef, useEffect } from "react";
 
 const BotUI = (props: { message: string[] }) => {
-  const [messages, setMessages] = useState<string[]>([...props.message]);
+  const [messages, setMessages] = useState<string[]>([]);
   const [input, setInput] = useState<string>("");
-
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
-  const claraAI = new ClaraAI();
-
+  const claraAI = ClaraAI.getInstance(); // Use Singleton instance
   const [isTyping, setIsTyping] = useState(false);
+
   useEffect(() => {
-    setIsTyping(true);
     setMessages([...props.message]);
-    setIsTyping(false);
   }, [props.message]);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
   useEffect(() => {
     const pageContent = document.body.innerHTML.toString();
     const setInitialMessages = async () => {
+      setIsTyping(true);
       try {
         const response = await claraAI.startConversation(pageContent);
-        setMessages([`Clara: ${response.content}`]);
+        setMessages((prevMessages) => [...prevMessages, `Clara: ${response}`]);
       } catch (e) {
-        console.log(e);
-        setMessages([
+        console.error(e);
+        setMessages((prevMessages) => [
+          ...prevMessages,
           `Clara: Sorry, I am unable to process your request at the moment. Please try again later.`,
         ]);
+      } finally {
+        setIsTyping(false);
       }
     };
     setInitialMessages();
   }, []);
-  const handleSend = async () => {
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+
     setIsTyping(true);
+    setMessages((prevMessages) => [...prevMessages, `You: ${input}`]);
+
     try {
       const response = await claraAI.invoke(input);
-      console.log(response);
-      setIsTyping(false);
-      setMessages([...messages, `You: ${input}`, `Clara: ${response.content}`]);
-      setInput("");
+      setMessages((prevMessages) => [...prevMessages, `Clara: ${response}`]);
     } catch (e) {
-      console.log(e);
-      setIsTyping(false);
-      setMessages([
-        ...messages,
-        `You: ${input}`,
+      console.error(e);
+      setMessages((prevMessages) => [
+        ...prevMessages,
         `Clara: Sorry, I am unable to process your request at the moment. Please try again later.`,
       ]);
+    } finally {
+      setIsTyping(false);
       setInput("");
     }
   };
-
-  useEffect(() => {
-    endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   return (
     <div className="fixed bottom-0 right-0 p-4 bg-white shadow-lg w-1/3">
@@ -78,12 +80,7 @@ const BotUI = (props: { message: string[] }) => {
           </div>
         )}
       </div>
-      <form
-        className="flex space-x-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSend();
-        }}>
+      <form className="flex space-x-2" onSubmit={handleSend}>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -91,7 +88,9 @@ const BotUI = (props: { message: string[] }) => {
           className="border p-2 w-full"
           placeholder="Type your message..."
         />
-        <button className="bg-blue-500 text-white p-2 mt-2">Send</button>
+        <button type="submit" className="bg-blue-500 text-white p-2 mt-2">
+          Send
+        </button>
       </form>
     </div>
   );

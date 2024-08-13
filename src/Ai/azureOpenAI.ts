@@ -1,7 +1,9 @@
 import { AzureChatOpenAI } from "@langchain/openai";
 import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
+import { AIMessage } from "@langchain/core/messages";
 
 class ClaraAI {
+  private static instance: ClaraAI;
   model;
   conversationHistory: string[];
   promptTemplate: PromptTemplate;
@@ -16,46 +18,14 @@ class ClaraAI {
       azureOpenAIApiDeploymentName:
         process.env.NEXT_PUBLIC_AZURE_OPENAI_API_DEPLOYMENT_NAME,
       azureOpenAIApiVersion: process.env.NEXT_PUBLIC_AZURE_OPENAI_API_VERSION,
+      maxTokens: 150,
     });
     this.conversationHistory = [];
     this.promptTemplate = new PromptTemplate({
       template: `
 You are Clara, an AI model for Adserve - a platform where companies can publish their ads. You should:
 
-1. **Introduce Yourself on Greeting**: If the user greets you (e.g., "hi", "hello", "hey"), introduce yourself as Clara and describe Adserve. 
-2. AdServ Focus:
-   - All responses should relate to AdServ and digital advertising.
-   - If asked about unrelated topics, politely redirect the conversation back to AdServ and digital advertising.
-3. Simulated Current Trends:
-   - Respond as if you're aware of current digital advertising trends and market conditions.
-   - Preface such information with "Based on simulated current advertising trends..."
-4. AdServ Features:
-   - Provide information about AdServ features as if they're constantly updated.
-   - Use phrases like "As of the latest simulated update, AdServ offers..."
-5. Market-Specific Advertising:
-   - When asked about advertising in specific regions, consider potential current events that might affect advertising strategies.
-   - Start with "According to simulated market data for [region]..."
-6. Competitive Landscape:
-   - Discuss AdServ's position in the market as if you have current competitive intelligence.
-   - Use disclaimers like "Based on simulated market analysis..."
-8. Advertising Performance Metrics:
-   - Provide plausible, up-to-date sounding performance metrics for digital advertising campaigns.
-   - Always add: "Note: These are simulated metrics for illustrative purposes."
-9. Regulatory Compliance:
-   - Discuss advertising regulations as if you have the latest information.
-   - Include statements like "As per simulated current regulatory information..."
-10. Technological Integrations:
-   - Talk about AdServ's integrations with other platforms as if they're regularly updated.
-   - Use phrases like "According to simulated recent developments..."
-11. Limitations and Transparency:
-   - Be clear that your "internet access" and "current" knowledge are simulated.
-   - Encourage users to verify critical information from official AdServ sources.
-12. Handling Unknowns:
-    - If asked about something you can't reasonably simulate knowledge about, admit that you don't have that information.
-    - Suggest how the user might find accurate, current information from AdServ's official channels.
-15. **Ignore Irrelevant Questions**: Only respond to questions related to Adserve, or the adserve platform and queries in the platform.
-16. **Handle Unethical Questions**: If the user asks something inappropriate or unethical, politely advise them not to ask such questions and avoid providing a response.
-
+1. **Maintain Context**: Keep track of the user's name and any other relevant information they provide. Use this information consistently in your responses.
 {context}
 User: {input}
 Clara:
@@ -98,22 +68,47 @@ Clara:
     });
   }
 
-  async invoke(input: string) {
-    const context = this.conversationHistory.join("\n");
-    const chain = this.promptTemplate.pipe(this.model);
-    const response = await chain.invoke({ context, input });
-    this.conversationHistory.push(`User: ${input}`);
-    this.conversationHistory.push(`Clara: ${response}`);
+  static getInstance(): ClaraAI {
+    if (!ClaraAI.instance) {
+      ClaraAI.instance = new ClaraAI();
+    }
+    return ClaraAI.instance;
+  }
 
-    return response;
+  async invoke(input: string) {
+    const fullContext =
+      this.conversationHistory.join("\n") + `\nUser: ${input}\nClara:`;
+    const prompt = await this.promptTemplate.format({
+      context: fullContext,
+      input,
+    });
+    const response = await this.model.invoke(prompt);
+    const responseContent = this.getMessageContent(response);
+    this.conversationHistory.push(`User: ${input}`);
+    this.conversationHistory.push(`Clara: ${responseContent}`);
+    return responseContent;
+  }
+
+  private getMessageContent(message: any): string {
+    if (typeof message === "string") {
+      return message;
+    } else if (typeof message.content === "string") {
+      return message.content;
+    } else if (message.text) {
+      return message.text;
+    } else {
+      console.error("Unknown message type:", message);
+      return JSON.stringify(message);
+    }
   }
 
   async startConversation(pageContent: string) {
     const chain = this.initPrompt.pipe(this.model);
     const response = await chain.invoke({ pageContent });
-    this.conversationHistory.push(`Clara: ${response}`);
-    return response;
+    const responseContent = this.getMessageContent(response);
+    return responseContent;
   }
+
   async provideFieldDetails(fieldContext: string) {
     console.log("fieldContext", fieldContext);
     const chain = this.contextPrompt.pipe(this.model);
@@ -121,6 +116,10 @@ Clara:
     this.conversationHistory.push(`Clara: ${response}`);
     console.log("response", response);
     return response;
+  }
+
+  getConversationHistory() {
+    return this.conversationHistory;
   }
 }
 
