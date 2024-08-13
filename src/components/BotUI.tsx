@@ -1,62 +1,51 @@
 "use client";
+"use client";
 import ClaraAI from "../Ai/azureOpenAI";
 import React, { useState, useRef, useEffect } from "react";
 
-const BotUI = (props: { message: string[] }) => {
+const BotUI = (props: { message: string[]; claraAI: ClaraAI }) => {
   const [messages, setMessages] = useState<string[]>([...props.message]);
   const [input, setInput] = useState<string>("");
-
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
-  const claraAI = new ClaraAI();
-
+  const claraAI = props.claraAI;
   const [isTyping, setIsTyping] = useState(false);
+
+  // Handle new props.message updates
   useEffect(() => {
-    setIsTyping(true);
-    setMessages([...props.message]);
-    setIsTyping(false);
+    if (props.message.length > 0) {
+      setMessages((prevMessages) => [...prevMessages, ...props.message]);
+    }
   }, [props.message]);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-  useEffect(() => {
-    const pageContent = document.body.innerHTML.toString();
-    const setInitialMessages = async () => {
-      try {
-        const response = await claraAI.startConversation(pageContent);
-        setMessages([`Clara: ${response.content}`]);
-      } catch (e) {
-        console.log(e);
-        setMessages([
-          `Clara: Sorry, I am unable to process your request at the moment. Please try again later.`,
-        ]);
-      }
-    };
-    setInitialMessages();
-  }, []);
+
+  // Start conversation only once
+  
+
   const handleSend = async () => {
     setIsTyping(true);
     try {
       const response = await claraAI.invoke(input);
-      console.log(response);
-      setIsTyping(false);
-      setMessages([...messages, `You: ${input}`, `Clara: ${response.content}`]);
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        `You: ${input}`,
+        `Clara: ${response?.response}`,
+      ]);
       setInput("");
+      setIsTyping(false);
     } catch (e) {
       console.log(e);
-      setIsTyping(false);
-      setMessages([
-        ...messages,
+      setMessages((prevMessages) => [
+        ...prevMessages,
         `You: ${input}`,
         `Clara: Sorry, I am unable to process your request at the moment. Please try again later.`,
       ]);
       setInput("");
+      setIsTyping(false);
     }
   };
-
-  useEffect(() => {
-    endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   return (
     <div className="fixed bottom-0 right-0 p-4 bg-white shadow-lg w-1/3">
