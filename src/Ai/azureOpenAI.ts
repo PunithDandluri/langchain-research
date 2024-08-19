@@ -4,18 +4,21 @@ import {
   HumanMessagePromptTemplate,
   MessagesPlaceholder,
   PromptTemplate,
-  SystemMessagePromptTemplate,
 } from "@langchain/core/prompts";
-import { BufferMemory } from "langchain/memory";
+import { EntityMemory } from "langchain/memory";
 import { ConversationChain } from "langchain/chains";
-import { getPromptInputKey } from "@langchain/core/memory";
+import { MongoDBAtlasVectorSearch } from "@langchain/mongodb";
+import { AzureOpenAIEmbeddings } from "@langchain/openai";
 
 class ClaraAI {
+  private static instance: ClaraAI;
   model;
-  conversationHistory: BufferMemory;
+  conversationHistory: EntityMemory;
   conversationChain: ConversationChain;
   adServeUser: object;
-
+  embeddings: AzureOpenAIEmbeddings;
+  dbName: string = "your_database_name";
+  collectionName: string = "your_collection_name";
   constructor() {
     this.model = new AzureChatOpenAI({
       azureOpenAIApiKey: process.env.NEXT_PUBLIC_AZURE_OPENAI_API_KEY,
@@ -27,12 +30,33 @@ class ClaraAI {
     });
     this.adServeUser = {};
 
-    this.conversationHistory = new BufferMemory();
+    this.conversationHistory = new EntityMemory({
+      llm: this.model,
+      aiPrefix: "Clara",
+      chatHistoryKey: "history",
+      entitiesKey: "entities",
+      returnMessages: true,
+    });
     this.conversationChain = new ConversationChain({
       llm: this.model,
       prompt: this.getDefaultPrompt(),
       memory: this.conversationHistory,
     });
+    this.embeddings = new AzureOpenAIEmbeddings({
+      azureOpenAIApiKey: process.env.NEXT_PUBLIC_AZURE_OPENAI_API_KEY,
+      azureOpenAIApiInstanceName:
+        process.env.NEXT_PUBLIC_AZURE_OPENAI_API_INSTANCE_NAME,
+      azureOpenAIApiDeploymentName:
+        process.env.NEXT_PUBLIC_AZURE_OPENAI_API_DEPLOYMENT_NAME,
+      azureOpenAIApiVersion: process.env.NEXT_PUBLIC_AZURE_OPENAI_API_VERSION,
+    });
+  }
+
+  static getInstance() {
+    if (!this.instance) {
+      this.instance = new ClaraAI();
+    }
+    return this.instance;
   }
 
   getDefaultPrompt() {
@@ -59,6 +83,7 @@ class ClaraAI {
       inputVariables: ["history", "input"],
     });
   }
+
   getGreetingPrompt() {
     return ChatPromptTemplate.fromMessages([
       HumanMessagePromptTemplate.fromTemplate(`
@@ -86,7 +111,22 @@ Don't forget to include the following points in your response:
         `),
     ]);
   }
-
+  getDocumentBasedRAGQAPrompt() {
+    return ChatPromptTemplate.fromMessages([
+      new MessagesPlaceholder("history"),
+      HumanMessagePromptTemplate.fromTemplate(`
+        You are Clara, an AI Expert for Adserve - a platform where companies can publish their ads.
+        1. Provide an answer to the user's question based on the following context:
+        {question}
+        2. Include the following points in your response:
+         - Provide a concise and accurate answer.
+         - If the answer is not available, acknowledge that and suggest a related topic.
+         - Personalize the response using the user context if available.
+         - Encourage the user to explore more on the Adserve platform.
+         - Check in the chat history for any relevant information.
+  `),
+    ]);
+  }
   getFieldContextPrompt() {
     return ChatPromptTemplate.fromMessages([
       new MessagesPlaceholder("history"),
@@ -107,48 +147,115 @@ Don't forget to include the following points in your response:
   async login(adservUser: object) {
     this.adServeUser = adservUser;
     this.conversationChain.prompt = this.getGreetingPrompt();
-    const response = await this.conversationChain.invoke({
-      input: JSON.stringify(adservUser),
-    });
-    console.log("Login response:", response);
-    console.log("Memory state after login:", this.conversationHistory);
-    return response;
+    try {
+      const response = await this.conversationChain.invoke({
+        input: JSON.stringify(adservUser),
+      });
+      console.log("Login response:", response);
+      console.log(
+        "Memory state after login:",
+        this.conversationHistory.chatHistory
+      );
+      return response;
+    } catch (error) {
+      console.error("Login error:", error);
+    }
   }
 
   async invoke(input: string) {
     this.conversationChain.prompt = this.getDefaultPrompt();
-    console.log("prompt", this.conversationChain.prompt);
-    const response = await this.conversationChain.invoke({ input });
-    console.log("prompt", this.conversationChain.prompt);
-    console.log("Invoke response:", response);
-    console.log("Memory state after invoke:", this.conversationHistory);
-    return response;
+    try {
+      const response = await this.conversationChain.invoke({ input });
+      // const response = await this.retrievalQA(input);
+      console.log("Invoke response:", response);
+      console.log(
+        "Memory state after invoke:",
+        this.conversationHistory.chatHistory
+      );
+      return response;
+    } catch (error) {
+      console.error("Invoke error:", error);
+    }
   }
 
   async startConversation(pageContent: string) {
     this.conversationChain.prompt = this.getInitPrompt();
-    console.log("prompt", this.conversationChain.prompt);
     if (this.adServeUser) {
       pageContent += `\nUser: ${JSON.stringify(this.adServeUser)}`;
     }
-    const response = await this.conversationChain.invoke({ pageContent });
-    console.log("Start conversation response:", response);
-    console.log(
-      "Memory state after startConversation:",
-      this.conversationHistory
-    );
-    return response;
+    try {
+      const response = await this.conversationChain.invoke({ pageContent });
+      console.log("Start conversation response:", response);
+      console.log(
+        "Memory state after startConversation:",
+        this.conversationHistory
+      );
+      return response;
+    } catch (error) {
+      console.error("Start conversation error:", error);
+    }
   }
 
   async provideFieldDetails(fieldContext: string) {
     this.conversationChain.prompt = this.getFieldContextPrompt();
-    const response = await this.conversationChain.invoke({ fieldContext });
-    console.log("Field details response:", response);
-    console.log(
-      "Memory state after provideFieldDetails:",
-      this.conversationHistory
+    try {
+      const response = await this.conversationChain.invoke({ fieldContext });
+      console.log("Field details response:", response);
+      console.log(
+        "Memory state after provideFieldDetails:",
+        this.conversationHistory
+      );
+      return response;
+    } catch (error) {
+      console.error("Field details error:", error);
+    }
+  }
+
+  // Call API route for RetrievalQA
+  async retrievalQA(question: string) {
+    const contextData = await fetch(
+      "http://localhost:3000/api/retrieveDocuments",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: question }),
+        redirect: "follow",
+      }
     );
-    return response;
+    console.log("Context data:", contextData);
+    const jsonData = await contextData.json();
+    const humanAbleAnswer = await this.generateAnswer(
+      question,
+      JSON.stringify(jsonData)
+    );
+    return humanAbleAnswer;
+  }
+
+  async generateAnswer(question: string, documentsContent: string) {
+    try {
+      //log document content
+      console.log("Document content:", documentsContent);
+      this.conversationChain.prompt = this.getDocumentBasedRAGQAPrompt();
+      this.conversationHistory.saveContext(
+        {
+          human:
+            "This is the document content for my next question: " +
+            documentsContent,
+        },
+        {
+          clara: "okay, now ask me question based on it",
+        }
+      );
+      console.log(this.conversationHistory.chatHistory);
+      const response = await this.conversationChain.invoke({
+        question,
+      });
+      console.log("Generate answer response:", response);
+      return response;
+    } catch (error) {
+      console.error("Generate answer error:", error);
+      return;
+    }
   }
 }
 

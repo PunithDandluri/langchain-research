@@ -27,11 +27,11 @@ const BotUI = (props: { message: string[]; claraAI: ClaraAI }) => {
   const handleSend = async () => {
     setIsTyping(true);
     try {
-      const response = await claraAI.invoke(input);
+      const response = await claraAI.retrievalQA(input);
       setMessages((prevMessages) => [
         ...prevMessages,
         `You: ${input}`,
-        `Clara: ${response?.response}`,
+        `Clara: ${response?.response || response?.content}`,
       ]);
       setInput("");
       setIsTyping(false);

@@ -77,25 +77,25 @@ export default function Home() {
   const [isLogged, setIsLogged] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [loading, setLoading] = useState(false);
-  const claraAI = new ClaraAI();
-  // useEffect(() => {
-  //   const startInitialConversation = async () => {
-  //     try {
-  //       const response = await claraAI.invoke("start");
-  //       setMessages((prevMessages) => [
-  //         ...prevMessages,
-  //         `Clara: ${response?.response}`,
-  //       ]);
-  //     } catch (e) {
-  //       console.log(e);
-  //       setMessages((prevMessages) => [
-  //         ...prevMessages,
-  //         `Clara: Sorry, I am unable to process your request at the moment. Please try again later.`,
-  //       ]);
-  //     }
-  //   };
-  //   startInitialConversation();
-  // }, []);
+  const claraAI = ClaraAI.getInstance();
+  useEffect(() => {
+    const startInitialConversation = async () => {
+      try {
+        const response = await claraAI.invoke("start");
+        setMessages((prevMessages) => [
+          ...prevMessages,
+          `Clara: ${response?.response}`,
+        ]);
+      } catch (e) {
+        console.log(e);
+        setMessages((prevMessages) => [
+          ...prevMessages,
+          `Clara: Sorry, I am unable to process your request at the moment. Please try again later.`,
+        ]);
+      }
+    };
+    startInitialConversation();
+  }, []);
   const handleLogin = async () => {
     setLoading(true);
     setIsTyping(true);
